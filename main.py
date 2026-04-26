@@ -115,7 +115,6 @@ async def http_exc_handler(_: Request, exc: HTTPException):
             status_code=401,
             content={"detail": {"status": "error", "error": "unauthorized"}},
         )
-    # Keep FastAPI defaults for other HTTP errors.
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
 
@@ -171,9 +170,6 @@ def menu(
     x_time: Optional[str] = Header(default=None, alias="X-Time"),
 ):
     acc = _require_account(authorization)
-    # Observed from reference:
-    # - /menu mood_level stays "normal" even at 23:59
-    # - invalid X-Time like "99:99" returns a special menu (night drinks) with mood_level "normal"
     drinks = MENU_DRINKS if _is_valid_time(x_time) else NIGHT_MENU_DRINKS
     return {
         "status": "ok",
@@ -306,6 +302,5 @@ def ingredients(authorization: Optional[str] = Header(default=None, alias="Autho
 @app.get("/secret")
 def secret(authorization: Optional[str] = Header(default=None, alias="Authorization")):
     _ = _require_account(authorization)
-    # Reference returns HTTP 200 with an error payload.
     return {"status": "error", "error": "not_found"}
 
