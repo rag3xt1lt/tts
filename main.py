@@ -35,6 +35,12 @@ MENU_DRINKS: List[Dict[str, Any]] = [
     {"name": "Лонг-Айленд", "price": 25, "ingredients": ["водка", "джин", "кола", "ром", "текила"]},
 ]
 
+NIGHT_MENU_DRINKS: List[Dict[str, Any]] = [
+    {"name": "Ночной русский", "price": 8, "ingredients": ["водка", "лёд", "молоко"]},
+    {"name": "Бессонница", "price": 10, "ingredients": ["кола", "ром", "тоник"]},
+    {"name": "Лунный свет", "price": 12, "ingredients": ["джин", "сок", "тоник"]},
+]
+
 MIX_RECIPES: Dict[Tuple[str, ...], Dict[str, Any]] = {
     tuple(sorted(["водка", "лёд"])): {"drink": "Русский", "price": 8},
     tuple(sorted(["водка", "сок"])): {"drink": "Отвёртка", "price": 10},
@@ -59,6 +65,18 @@ def _mood_from_time(x_time: Optional[str]) -> str:
     if h >= 23 or h <= 5:
         return "grumpy"
     return "normal"
+
+
+def _is_valid_time(x_time: Optional[str]) -> bool:
+    if not x_time:
+        return True
+    try:
+        hh, mm = x_time.split(":", 1)
+        h = int(hh)
+        m = int(mm)
+        return 0 <= h <= 23 and 0 <= m <= 59
+    except Exception:
+        return False
 
 
 @dataclass
@@ -153,12 +171,15 @@ def menu(
     x_time: Optional[str] = Header(default=None, alias="X-Time"),
 ):
     acc = _require_account(authorization)
-    mood = _mood_from_time(x_time)
+    # Observed from reference:
+    # - /menu mood_level stays "normal" even at 23:59
+    # - invalid X-Time like "99:99" returns a special menu (night drinks) with mood_level "normal"
+    drinks = MENU_DRINKS if _is_valid_time(x_time) else NIGHT_MENU_DRINKS
     return {
         "status": "ok",
-        "drinks": MENU_DRINKS,
+        "drinks": drinks,
         "balance": acc.balance,
-        "mood_level": mood,
+        "mood_level": "normal",
     }
 
 

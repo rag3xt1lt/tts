@@ -1,49 +1,56 @@
-# Black Barmen (API clone)
+## Black Barmen (API clone)
 
-Запуск на Windows (PowerShell), порт **8000**.
+Локальный клон референса `https://bar.antihype.lol`.
 
-## Установка
+- **Порт**: `8000`
+- **Формат**: JSON
+- **Авторизация**: `Authorization: Bearer <token>`
+
+## Запуск на Windows (PowerShell)
 
 ```powershell
 cd d:\black-barmen
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r .\requirements.txt
+python -m pip install -r .\requirements.txt
+python -m uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
-## Запуск
+## Запуск на Windows (cmd.exe)
 
-```powershell
-uvicorn main:app --host 0.0.0.0 --port 8000
+```bat
+cd /d d:\black-barmen
+py -m venv .venv
+.\.venv\Scripts\activate.bat
+py -m pip install -r requirements.txt
+py -m uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
-## Сравнение с референсом
+## Проверка совпадения с референсом (probe.py)
 
-Запустите сервер локально, затем в другом окне:
+Запустите локальный сервер, затем в другом окне:
 
-```powershell
-python .\probe.py --ref https://bar.antihype.lol --local http://127.0.0.1:8000
+```bat
+cd /d d:\black-barmen
+py probe.py --ref https://bar.antihype.lol --local http://127.0.0.1:8000 --timeout 60 --retries 4
 ```
 
-## Поиск скрытых эндпоинтов (референс)
+Если бывают проблемы с доступом к референсу (TLS handshake timeout), попробуйте:
 
-Скрипт делает регистрацию и прогоняет небольшой wordlist по референсу, выводя всё, что не похоже на обычный 404.
-
-```powershell
-python .\discover.py --ref https://bar.antihype.lol
+```bat
+py probe.py --ref https://bar.antihype.lol --local http://127.0.0.1:8000 --timeout 60 --retries 4 --insecure
 ```
 
-## Быстрый тест
+## Поиск скрытых эндпоинтов (discover.py)
 
-```powershell
-# register
-$r = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/register
-$token = $r.token
+Референс имеет ограничение по частоте запросов (может отвечать 429 `rate_limit`), поэтому запускайте медленно:
 
-# menu
-Invoke-RestMethod -Method Get -Uri http://127.0.0.1:8000/menu -Headers @{
-  Authorization = "Bearer $token"
-  "X-Time" = "14:30"
-}
+```bat
+cd /d d:\black-barmen
+py discover.py --ref https://bar.antihype.lol --sleep-ms 1500 --max-requests 30
 ```
+
+## Найденные секреты
+
+Актуальный список находок записан в `secrets_found.txt`.
 

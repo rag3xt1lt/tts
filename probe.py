@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -43,6 +44,7 @@ def _strip_fields(obj: Any, fields: Iterable[str]) -> Any:
 class Call:
     method: str
     path: str
+    auth: bool = True
     json_body: Optional[Dict[str, Any]] = None
     x_time: Optional[str] = None
 
@@ -52,6 +54,19 @@ def _register(client: httpx.Client) -> Tuple[str, Dict[str, Any]]:
     return r.headers.get("content-type", ""), _read_json(r)
 
 
+def _with_retries(fn, *, attempts: int, base_sleep_s: float = 0.75):
+    last_exc: Exception | None = None
+    for i in range(attempts):
+        try:
+            return fn()
+        except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError) as e:
+            last_exc = e
+            if i == attempts - 1:
+                raise
+            time.sleep(base_sleep_s * (2**i))
+    raise last_exc or RuntimeError("unknown retry error")
+
+
 def _read_json(resp: httpx.Response) -> Any:
     try:
         return resp.json()
@@ -59,15 +74,17 @@ def _read_json(resp: httpx.Response) -> Any:
         return {"__non_json__": resp.text}
 
 
-def _auth_headers(token: str, x_time: Optional[str]) -> Dict[str, str]:
-    h = {"Authorization": f"Bearer {token}"}
+def _headers(token: str, x_time: Optional[str], *, auth: bool) -> Dict[str, str]:
+    h: Dict[str, str] = {}
+    if auth:
+        h["Authorization"] = f"Bearer {token}"
     if x_time is not None:
         h["X-Time"] = x_time
     return h
 
 
 def _do(client: httpx.Client, token: str, call: Call) -> Tuple[int, Any]:
-    headers = _auth_headers(token, call.x_time)
+    headers = _headers(token, call.x_time, auth=call.auth)
     r = client.request(call.method, call.path, headers=headers, json=call.json_body)
     return r.status_code, _read_json(r)
 
@@ -90,6 +107,12 @@ def _scenario(drinks_from_menu: List[Dict[str, Any]]) -> List[Call]:
     calls.append(Call("GET", "/menu", x_time="14:30"))
     calls.append(Call("GET", "/balance"))
     calls.append(Call("GET", "/profile"))
+    calls.append(Call("GET", "/secret"))
+    calls.append(Call("GET", "/secret", auth=False))
+
+    # Invalid / edge times
+    calls.append(Call("GET", "/menu", x_time="23:59"))
+    calls.append(Call("GET", "/menu", x_time="99:99"))
 
     if drinks_from_menu:
         d0 = drinks_from_menu[0]["name"]
@@ -98,9 +121,11 @@ def _scenario(drinks_from_menu: List[Dict[str, Any]]) -> List[Call]:
 
     calls.append(Call("POST", "/mix", {"ingredients": ["водка", "лёд"]}, x_time="14:30"))
     calls.append(Call("POST", "/mix", {"ingredients": ["водка", "сок"]}, x_time="23:59"))
+    calls.append(Call("POST", "/mix", {"ingredients": ["лёд", "водка"]}, x_time="14:30"))
 
     calls.append(Call("POST", "/tip", {"amount": 5}))
     calls.append(Call("POST", "/tip", {"amount": 10_000}))
+    calls.append(Call("POST", "/tip", {"amount": -1}))
 
     calls.append(Call("GET", "/history"))
     calls.append(Call("GET", "/profile"))
@@ -117,6 +142,7 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--ref", default="https://bar.antihype.lol", help="Reference base URL")
     ap.add_argument("--local", default="http://127.0.0.1:8000", help="Local base URL")
     ap.add_argument("--timeout", type=float, default=10.0)
+    ap.add_argument("--retries", type=int, default=3, help="Retries for network timeouts")
     ap.add_argument("--insecure", action="store_true", help="Disable TLS verification for reference")
     args = ap.parse_args(argv)
 
@@ -124,7 +150,14 @@ def main(argv: List[str]) -> int:
     loc = httpx.Client(base_url=args.local, timeout=args.timeout)
 
     try:
-        _, ref_reg = _register(ref)
+        try:
+            _, ref_reg = _with_retries(lambda: _register(ref), attempts=max(1, args.retries))
+        except httpx.ConnectTimeout as e:
+            print("Failed to reach reference API (TLS handshake/connect timeout).")
+            print("Try: --timeout 30  (or --timeout 60), and if you have HTTPS interception/proxy try: --insecure")
+            print(f"Error: {e}")
+            return 3
+
         _, loc_reg = _register(loc)
         ref_token = ref_reg.get("token")
         loc_token = loc_reg.get("token")
