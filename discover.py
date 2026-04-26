@@ -27,10 +27,8 @@ def _read_json(resp: httpx.Response) -> Any:
 def _is_default_404(resp: httpx.Response, body: Any) -> bool:
     if resp.status_code != 404:
         return False
-    # FastAPI/Starlette typical 404 shape
     if isinstance(body, dict) and body.get("detail") == "Not Found":
         return True
-    # Some APIs return empty JSON / message; treat any 404 as "not interesting"
     return True
 
 
@@ -68,7 +66,6 @@ def _register(client: httpx.Client) -> str:
 def _make_probes(paths: Sequence[str]) -> List[Probe]:
     probes: List[Probe] = []
     for p in paths:
-        # Keep request volume low to avoid tripping rate limits.
         probes.append(Probe("GET", p, auth=False))
         probes.append(Probe("GET", p, auth=True))
 
@@ -76,7 +73,6 @@ def _make_probes(paths: Sequence[str]) -> List[Probe]:
 
 
 def _candidate_paths() -> List[str]:
-    # Keep this list reasonable to avoid hammering the reference.
     return [
         "/",
         "/docs",
